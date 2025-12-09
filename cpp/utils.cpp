@@ -93,13 +93,62 @@ std::vector<Order> OrderPlanner::read_orders(std::string filename) {
     return orders;
 }
 
-void OrderPlanner::print_path(const Path &path) {
+void OrderPlanner::print_path(const Path &path, std::ostream& out) {
     for (const Site &site : path.outbound) {
-        std::cout << site.e << "," << site.n << " ";
+        out << site.e << "," << site.n << " ";
     }
-    std::cout << "// ";
+    out << "// ";
     for (const Site &site : path.inbound) {
-        std::cout << site.e << "," << site.n << " ";
+        out << site.e << "," << site.n << " ";
     }
-    std::cout << std::endl;
+    out << std::endl;
+}
+
+// ========== Helper Functions Implementation ==========
+
+bool OrderPlanner::sites_equal(const Site& a, const Site& b) {
+    return a.e == b.e && a.n == b.n;
+}
+
+bool OrderPlanner::is_site_valid(const Map& map, int e, int n) {
+    if (e < 0 || n < 0) {
+        return false;
+    }
+    size_t rows = get_map_rows(map);
+    size_t cols = get_map_cols(map);
+    return static_cast<size_t>(e) < rows && static_cast<size_t>(n) < cols;
+}
+
+uint8_t OrderPlanner::get_density_at(const Map& map, const Site& site) {
+    if (!is_site_valid(map, static_cast<int>(site.e), static_cast<int>(site.n))) {
+        return 0;
+    }
+    return map.density[site.e][site.n];
+}
+
+// ========== Ablation Study ==========
+
+int OrderPlanner::compute_path_density(const Map& map, const Path& path) {
+    int total = 0;
+    for (const auto& site : path.outbound) total += get_density_at(map, site);
+    for (const auto& site : path.inbound) total += get_density_at(map, site);
+    return total;
+}
+
+void OrderPlanner::log_ablation_result(
+    const std::string& filename,
+    double lambda,
+    int order_num,
+    int outbound_steps,
+    int inbound_steps,
+    int total_density
+) {
+    std::ofstream file(filename, std::ios::app);
+    if (!file.is_open()) {
+        std::cerr << "Error: could not open " << filename << " for writing" << std::endl;
+        return;
+    }
+    file << lambda << "," << order_num << "," << outbound_steps << "," 
+         << inbound_steps << "," << (outbound_steps + inbound_steps) << "," 
+         << total_density << std::endl;
 }
