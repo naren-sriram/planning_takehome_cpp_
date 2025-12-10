@@ -11,7 +11,10 @@
 using namespace OrderPlanner;
 
 // Default lambda value (can be set from command line)
-double OrderPlanner::LAMBDA = 0.13;
+double OrderPlanner::LAMBDA = 0.5;
+
+// Store the lambda that was actually used for the last find_path call
+static double last_used_lambda = 0.1;
 
 // ========== Dijkstra: Compute Heuristic ==========
 // h(s) = min cost from s to goal, where cost = density + LAMBDA * length
@@ -24,8 +27,8 @@ CostMap OrderPlanner::compute_cost_map(const Map &map, const Site &goal) {
     auto cmp = [](const Node& a, const Node& b) { return a.cost > b.cost; };
     std::priority_queue<Node, std::vector<Node>, decltype(cmp)> pq(cmp);
     
-    h[goal.e][goal.n] = get_density_at(map, goal);
-    pq.push({goal.e, goal.n, h[goal.e][goal.n]});
+    h[goal.e][goal.n] = 0.0;  // No cost to reach goal from goal
+    pq.push({goal.e, goal.n, 0.0});
     
     while (!pq.empty()) {
         auto [e, n, cost] = pq.top(); pq.pop();
@@ -36,7 +39,9 @@ CostMap OrderPlanner::compute_cost_map(const Map &map, const Site &goal) {
             int nn = (int)n + DIRECTION_DN[i];
             if (!is_site_valid(map, ne, nn)) continue;
             
-            double edge = get_density_at(map, {(size_t)ne, (size_t)nn}) + LAMBDA;
+            // Cost to reach current node (e,n) from neighbor (ne,nn)
+            // = cost to enter current node = density(e,n) + LAMBDA
+            double edge = get_density_at(map, {(size_t)e, (size_t)n}) + LAMBDA;
             double new_cost = cost + edge;
             if (new_cost < h[ne][nn]) {
                 h[ne][nn] = new_cost;
@@ -276,20 +281,36 @@ std::vector<Site> OrderPlanner::plan(const Map&, const Site& start, const Site& 
 // ========== Main Entry Point ==========
 
 Path OrderPlanner::find_path(const Map &map, const Order &order) {
-    // Precompute heuristics
-    CostMap h_delivery = compute_cost_map(map, order.delivery);
-    std::vector<CostMap> h_docks;
-    for (const auto& dock : map.docks) {
-        h_docks.push_back(compute_cost_map(map, dock));
+    AStarResult result;
+    double lambda_used = 0.05;
+    
+    // Try with increasing lambda until success (max 2.0)
+    while (lambda_used <= 2.0) {
+        LAMBDA = lambda_used;
+        
+        // Recompute heuristics with current lambda
+        CostMap h_delivery = compute_cost_map(map, order.delivery);
+        std::vector<CostMap> h_docks;
+        for (const auto& dock : map.docks) {
+            h_docks.push_back(compute_cost_map(map, dock));
+        }
+        
+        result = astar_search_with_waypoint(
+            map, order.origin_dock, order.delivery, map.docks,
+            h_delivery, h_docks, MAX_FLIGHT_LENGTH
+        );
+        
+        if (result.success) {
+            last_used_lambda = lambda_used;
+            break;
+        }
+        lambda_used += 0.05;  // Increase lambda and retry
     }
     
-    // Full route: origin → delivery → any dock
-    AStarResult result = astar_search_with_waypoint(
-        map, order.origin_dock, order.delivery, map.docks,
-        h_delivery, h_docks, MAX_FLIGHT_LENGTH
-    );
-    
-    if (!result.success) return Path{{}, {}};
+    if (!result.success) {
+        last_used_lambda = lambda_used;  // Log the failed lambda too
+        return Path{{}, {}};
+    }
     
     // Split at delivery
     std::vector<Site> outbound, inbound;
@@ -303,10 +324,14 @@ Path OrderPlanner::find_path(const Map &map, const Order &order) {
         }
     }
     
-    // Add delivery to inbound start
-    if (!inbound.empty()) {
+    // Add delivery to inbound start only if it's not already there
+    if (!inbound.empty() && !sites_equal(inbound.front(), order.delivery)) {
         inbound.insert(inbound.begin(), order.delivery);
     }
     
     return Path{outbound, inbound};
+}
+
+double OrderPlanner::get_last_used_lambda() {
+    return last_used_lambda;
 }

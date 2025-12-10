@@ -54,4 +54,7 @@ namespace OrderPlanner {
     // Legacy functions
     std::vector<Site> plan(const Map &map, const Site &start, const Site &end);
     Path find_path(const Map &map, const Order &order);
+    
+    // Get the lambda value that was used for the last successful find_path call
+    double get_last_used_lambda();
 }
