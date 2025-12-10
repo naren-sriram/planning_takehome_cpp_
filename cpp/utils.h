@@ -44,6 +44,19 @@ namespace OrderPlanner {
     constexpr int DIRECTION_DE[NUM_DIRECTIONS] = {-1, 1, 0, 0, -1, -1, 1, 1};
     constexpr int DIRECTION_DN[NUM_DIRECTIONS] = {0, 0, -1, 1, -1, 1, -1, 1};
 
+    // ========== Common Data Structures ==========
+    
+    // Node structure for Dijkstra's algorithm
+    struct DijkstraNode {
+        size_t e;
+        size_t n;
+        double cost;
+        
+        bool operator>(const DijkstraNode& other) const {
+            return cost > other.cost;
+        }
+    };
+
     // ========== Helper Functions ==========
 
     // Check if two sites are equal

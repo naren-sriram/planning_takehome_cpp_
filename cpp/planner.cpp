@@ -10,46 +10,88 @@
 
 using namespace OrderPlanner;
 
-// Default lambda value (can be set from command line)
 double OrderPlanner::LAMBDA = 0.5;
-
-// Store the lambda that was actually used for the last find_path call
-static double last_used_lambda = 0.1;
+static double last_used_lambda = LAMBDA_START;
 
 // ========== Dijkstra: Compute Heuristic ==========
 // h(s) = min cost from s to goal, where cost = density + LAMBDA * length
 
 CostMap OrderPlanner::compute_cost_map(const Map &map, const Site &goal) {
-    size_t rows = get_map_rows(map), cols = get_map_cols(map);
+    const size_t rows = get_map_rows(map);
+    const size_t cols = get_map_cols(map);
+    
+    std::priority_queue<DijkstraNode, std::vector<DijkstraNode>, std::greater<DijkstraNode>> pq;
     CostMap h(rows, std::vector<double>(cols, 1e18));
     
-    struct Node { size_t e, n; double cost; };
-    auto cmp = [](const Node& a, const Node& b) { return a.cost > b.cost; };
-    std::priority_queue<Node, std::vector<Node>, decltype(cmp)> pq(cmp);
-    
-    h[goal.e][goal.n] = 0.0;  // No cost to reach goal from goal
+    h[goal.e][goal.n] = 0.0;
     pq.push({goal.e, goal.n, 0.0});
     
     while (!pq.empty()) {
-        auto [e, n, cost] = pq.top(); pq.pop();
-        if (cost > h[e][n]) continue;
+        const DijkstraNode current = pq.top();
+        pq.pop();
+        
+        if (current.cost > h[current.e][current.n]) {
+            continue;
+        }
         
         for (int i = 0; i < NUM_DIRECTIONS; i++) {
-            int ne = (int)e + DIRECTION_DE[i];
-            int nn = (int)n + DIRECTION_DN[i];
-            if (!is_site_valid(map, ne, nn)) continue;
+            const int ne = static_cast<int>(current.e) + DIRECTION_DE[i];
+            const int nn = static_cast<int>(current.n) + DIRECTION_DN[i];
             
-            // Cost to reach current node (e,n) from neighbor (ne,nn)
-            // = cost to enter current node = density(e,n) + LAMBDA
-            double edge = get_density_at(map, {(size_t)e, (size_t)n}) + LAMBDA;
-            double new_cost = cost + edge;
+            if (!is_site_valid(map, ne, nn)) {
+                continue;
+            }
+            
+            const double edge_cost = get_density_at(map, {current.e, current.n}) + LAMBDA;
+            const double new_cost = current.cost + edge_cost;
+            
             if (new_cost < h[ne][nn]) {
                 h[ne][nn] = new_cost;
-                pq.push({(size_t)ne, (size_t)nn, new_cost});
+                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_cost});
             }
         }
     }
     return h;
+}
+
+CostMap OrderPlanner::compute_min_cost_to_any_dock(const Map& map, const std::vector<Site>& docks) {
+    const size_t rows = get_map_rows(map);
+    const size_t cols = get_map_cols(map);
+    CostMap h_min(rows, std::vector<double>(cols, 1e18));
+    
+    std::priority_queue<DijkstraNode, std::vector<DijkstraNode>, std::greater<DijkstraNode>> pq;
+    
+    for (const auto& dock : docks) {
+        h_min[dock.e][dock.n] = 0.0;
+        pq.push({dock.e, dock.n, 0.0});
+    }
+    
+    while (!pq.empty()) {
+        const DijkstraNode current = pq.top();
+        pq.pop();
+        
+        if (current.cost > h_min[current.e][current.n]) {
+            continue;
+        }
+        
+        for (int i = 0; i < NUM_DIRECTIONS; i++) {
+            const int ne = static_cast<int>(current.e) + DIRECTION_DE[i];
+            const int nn = static_cast<int>(current.n) + DIRECTION_DN[i];
+            
+            if (!is_site_valid(map, ne, nn)) {
+                continue;
+            }
+            
+            const double edge_cost = get_density_at(map, {current.e, current.n}) + LAMBDA;
+            const double new_cost = current.cost + edge_cost;
+            
+            if (new_cost < h_min[ne][nn]) {
+                h_min[ne][nn] = new_cost;
+                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_cost});
+            }
+        }
+    }
+    return h_min;
 }
 
 // ========== A* with OPEN/CLOSED Sets ==========
@@ -264,6 +306,158 @@ AStarResult OrderPlanner::astar_search_with_waypoint(
     return result;
 }
 
+// ========== Helper Functions for Unified A* ==========
+
+bool OrderPlanner::is_dock_position(const Site& pos, const std::vector<Site>& docks) {
+    for (const auto& dock : docks) {
+        if (sites_equal(pos, dock)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+double OrderPlanner::compute_unified_heuristic(
+    const Site& pos,
+    bool visited_delivery,
+    const Site& delivery,
+    const CostMap& h_delivery,
+    const CostMap& h_docks_min,
+    double h_delivery_to_docks
+) {
+    if (visited_delivery) {
+        return h_docks_min[pos.e][pos.n];
+    }
+    
+    if (sites_equal(pos, delivery)) {
+        return h_docks_min[pos.e][pos.n];
+    }
+    
+    return h_delivery[pos.e][pos.n] + h_delivery_to_docks - get_density_at(map, delivery);
+}
+
+// ========== Unified A* State Structures ==========
+
+struct StateKey {
+    Site position;
+    bool visited_delivery;
+    
+    bool operator<(const StateKey& other) const {
+        if (position.e != other.position.e) {
+            return position.e < other.position.e;
+        }
+        if (position.n != other.position.n) {
+            return position.n < other.position.n;
+        }
+        return visited_delivery < other.visited_delivery;
+    }
+};
+
+struct UnifiedState {
+    Site position;
+    bool visited_delivery;
+    double g;
+    double f;
+    int length;
+    std::shared_ptr<UnifiedState> parent;
+    
+    bool operator>(const UnifiedState& other) const {
+        return f > other.f;
+    }
+};
+
+AStarResult OrderPlanner::astar_search_unified(
+    const Map& map,
+    const Site& start,
+    const Site& delivery,
+    const std::vector<Site>& docks,
+    const CostMap& h_delivery,
+    const CostMap& h_docks_min,
+    double h_delivery_to_docks,
+    int max_steps
+) {
+    std::priority_queue<UnifiedState, std::vector<UnifiedState>, std::greater<UnifiedState>> OPEN;
+    std::set<StateKey> CLOSED;
+    std::map<StateKey, double> g_val;
+    
+    const double g0 = get_density_at(map, start);
+    const double h0 = compute_unified_heuristic(
+        start, false, delivery, h_delivery, h_docks_min, h_delivery_to_docks
+    );
+    const double f0 = g0 + h0;
+    const StateKey start_key = {start, false};
+    
+    g_val[start_key] = g0;
+    OPEN.push({start, false, g0, f0, 0, nullptr});
+    
+    while (!OPEN.empty()) {
+        const UnifiedState s = OPEN.top();
+        OPEN.pop();
+        const StateKey s_key = {s.position, s.visited_delivery};
+        
+        if (CLOSED.count(s_key) > 0) {
+            continue;
+        }
+        
+        if (s.visited_delivery && is_dock_position(s.position, docks) && s.length <= max_steps) {
+            AStarResult result;
+            result.success = true;
+            result.total_length = s.length;
+            result.total_density_cost = s.g - LAMBDA * s.length;
+            
+            auto cur = std::make_shared<UnifiedState>(s);
+            while (cur) {
+                result.path.push_back(cur->position);
+                cur = cur->parent;
+            }
+            std::reverse(result.path.begin(), result.path.end());
+            return result;
+        }
+        
+        CLOSED.insert(s_key);
+        
+        bool new_visited = s.visited_delivery;
+        if (sites_equal(s.position, delivery) && !s.visited_delivery) {
+            new_visited = true;
+        }
+        
+        for (int i = 0; i < NUM_DIRECTIONS; i++) {
+            const int ne = static_cast<int>(s.position.e) + DIRECTION_DE[i];
+            const int nn = static_cast<int>(s.position.n) + DIRECTION_DN[i];
+            
+            if (!is_site_valid(map, ne, nn)) {
+                continue;
+            }
+            
+            const Site s_prime = {static_cast<size_t>(ne), static_cast<size_t>(nn)};
+            const StateKey s_prime_key = {s_prime, new_visited};
+            
+            if (CLOSED.count(s_prime_key) > 0) {
+                continue;
+            }
+            
+            const int new_len = s.length + 1;
+            if (new_len > max_steps) {
+                continue;
+            }
+            
+            const double edge_cost = get_density_at(map, s_prime) + LAMBDA;
+            const double g_new = s.g + edge_cost;
+            
+            if (g_val.count(s_prime_key) == 0 || g_new < g_val[s_prime_key]) {
+                g_val[s_prime_key] = g_new;
+                const double h_prime = compute_unified_heuristic(
+                    s_prime, new_visited, delivery, h_delivery, h_docks_min, h_delivery_to_docks
+                );
+                const double f_new = g_new + h_prime;
+                OPEN.push({s_prime, new_visited, g_new, f_new, new_len, std::make_shared<UnifiedState>(s)});
+            }
+        }
+    }
+    
+    return AStarResult();
+}
+
 // ========== Legacy Plan (Simple Diagonal) ==========
 
 std::vector<Site> OrderPlanner::plan(const Map&, const Site& start, const Site& end) {
@@ -282,33 +476,32 @@ std::vector<Site> OrderPlanner::plan(const Map&, const Site& start, const Site& 
 
 Path OrderPlanner::find_path(const Map &map, const Order &order) {
     AStarResult result;
-    double lambda_used = 0.05;
+    double lambda_used = LAMBDA_START;
     
-    // Try with increasing lambda until success (max 2.0)
-    while (lambda_used <= 2.0) {
+    while (lambda_used <= LAMBDA_MAX) {
         LAMBDA = lambda_used;
         
-        // Recompute heuristics with current lambda
+        // Precompute heuristics
         CostMap h_delivery = compute_cost_map(map, order.delivery);
-        std::vector<CostMap> h_docks;
-        for (const auto& dock : map.docks) {
-            h_docks.push_back(compute_cost_map(map, dock));
-        }
+        CostMap h_docks_min = compute_min_cost_to_any_dock(map, map.docks);
         
-        result = astar_search_with_waypoint(
+        // Min cost from delivery to any dock (h_docks_min already has this)
+        double h_delivery_to_docks = h_docks_min[order.delivery.e][order.delivery.n];
+        
+        result = astar_search_unified(
             map, order.origin_dock, order.delivery, map.docks,
-            h_delivery, h_docks, MAX_FLIGHT_LENGTH
+            h_delivery, h_docks_min, h_delivery_to_docks, MAX_FLIGHT_LENGTH
         );
         
         if (result.success) {
             last_used_lambda = lambda_used;
             break;
         }
-        lambda_used += 0.05;  // Increase lambda and retry
+        lambda_used += LAMBDA_INCREMENT;
     }
     
     if (!result.success) {
-        last_used_lambda = lambda_used;  // Log the failed lambda too
+        last_used_lambda = lambda_used;
         return Path{{}, {}};
     }
     
@@ -324,7 +517,6 @@ Path OrderPlanner::find_path(const Map &map, const Order &order) {
         }
     }
     
-    // Add delivery to inbound start only if it's not already there
     if (!inbound.empty() && !sites_equal(inbound.front(), order.delivery)) {
         inbound.insert(inbound.begin(), order.delivery);
     }
