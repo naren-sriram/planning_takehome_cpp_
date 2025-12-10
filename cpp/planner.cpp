@@ -11,7 +11,7 @@
 using namespace OrderPlanner;
 
 // Default lambda value (can be set from command line)
-double OrderPlanner::LAMBDA = 0.2;
+double OrderPlanner::LAMBDA = 0.13;
 
 // ========== Dijkstra: Compute Heuristic ==========
 // h(s) = min cost from s to goal, where cost = density + LAMBDA * length
