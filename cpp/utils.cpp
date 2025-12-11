@@ -141,7 +141,11 @@ void OrderPlanner::log_ablation_result(
     int order_num,
     int outbound_steps,
     int inbound_steps,
-    int total_density
+    int total_density,
+    int outbound_nodes_expanded,
+    int outbound_nodes_generated,
+    int inbound_nodes_expanded,
+    int inbound_nodes_generated
 ) {
     std::ofstream file(filename, std::ios::app);
     if (!file.is_open()) {
@@ -150,5 +154,7 @@ void OrderPlanner::log_ablation_result(
     }
     file << lambda << "," << order_num << "," << outbound_steps << "," 
          << inbound_steps << "," << (outbound_steps + inbound_steps) << "," 
-         << total_density << std::endl;
+         << total_density << ","
+         << outbound_nodes_expanded << "," << outbound_nodes_generated << ","
+         << inbound_nodes_expanded << "," << inbound_nodes_generated << std::endl;
 }

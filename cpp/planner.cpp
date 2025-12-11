@@ -9,6 +9,7 @@
 using namespace OrderPlanner;
 
 static double last_used_lambda = 0.0;
+static SearchStats last_search_stats;
 
 // ========== Distance to Nearest Dock (BFS) ==========
 
@@ -83,6 +84,8 @@ OutboundResult OrderPlanner::search_outbound(
     OutboundResult result;
     result.goal_state = delivery;
     result.goal_steps = -1;
+    result.nodes_expanded = 0;
+    result.nodes_generated = 1;  // Initial node
     
     while (!pq.empty()) {
         const AugmentedState current = pq.top();
@@ -91,6 +94,8 @@ OutboundResult OrderPlanner::search_outbound(
         if (current.risk > min_risk[current.e][current.n][current.steps]) {
             continue;
         }
+        
+        result.nodes_expanded++;  // Count nodes we actually expand
         
         if (sites_equal({current.e, current.n}, delivery)) {
             if (current.risk < profile[current.steps]) {
@@ -130,6 +135,7 @@ OutboundResult OrderPlanner::search_outbound(
                 parent_map[ne][nn][new_steps] = parent_node;
                 
                 pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_steps, new_risk});
+                result.nodes_generated++;  // Count nodes added to queue
             }
         }
     }
@@ -179,6 +185,8 @@ InboundResult OrderPlanner::search_inbound(
     RiskProfile profile(PROFILE_SIZE, INT_MAX);
     InboundResult result;
     result.goal_states.assign(PROFILE_SIZE, delivery);
+    result.nodes_expanded = 0;
+    result.nodes_generated = 1;  // Initial node
     
     while (!pq.empty()) {
         const AugmentedState current = pq.top();
@@ -187,6 +195,8 @@ InboundResult OrderPlanner::search_inbound(
         if (current.risk > min_risk[current.e][current.n][current.steps]) {
             continue;
         }
+        
+        result.nodes_expanded++;  // Count nodes we actually expand
         
         if (is_dock(current.e, current.n)) {
             if (current.risk < profile[current.steps]) {
@@ -224,6 +234,7 @@ InboundResult OrderPlanner::search_inbound(
                 parent_map[ne][nn][new_steps] = parent_node;
                 
                 pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_steps, new_risk});
+                result.nodes_generated++;  // Count nodes added to queue
             }
         }
     }
@@ -309,6 +320,12 @@ Path OrderPlanner::find_path(const Map& map, const Order& order) {
         map, order.delivery, map.docks, dist_to_docks, inbound_parents
     );
     
+    // Store search statistics for logging
+    last_search_stats.outbound_nodes_expanded = outbound_result.nodes_expanded;
+    last_search_stats.outbound_nodes_generated = outbound_result.nodes_generated;
+    last_search_stats.inbound_nodes_expanded = inbound_result.nodes_expanded;
+    last_search_stats.inbound_nodes_generated = inbound_result.nodes_generated;
+    
     // Phase C: Merge
     const auto merge_result = merge_profiles(outbound_result.profile, inbound_result.profile);
     
@@ -334,6 +351,10 @@ Path OrderPlanner::find_path(const Map& map, const Order& order) {
     }
     
     return Path{outbound_path, inbound_path};
+}
+
+OrderPlanner::SearchStats OrderPlanner::get_last_search_stats() {
+    return last_search_stats;
 }
 
 double OrderPlanner::get_last_used_lambda() {
