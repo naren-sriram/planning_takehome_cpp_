@@ -77,7 +77,7 @@ OutboundResult OrderPlanner::search_outbound(
     std::priority_queue<AugmentedState, std::vector<AugmentedState>, std::greater<AugmentedState>> pq;
     
     min_risk[start.e][start.n][0] = get_density_at(map, start);
-    pq.push({start.e, start.n, 0, get_density_at(map, start)});
+    pq.push({start, 0, get_density_at(map, start)});
     
     RiskProfile profile(PROFILE_SIZE, INT_MAX);
     OutboundResult result;
@@ -88,11 +88,11 @@ OutboundResult OrderPlanner::search_outbound(
         const AugmentedState current = pq.top();
         pq.pop();
         
-        if (current.risk > min_risk[current.e][current.n][current.steps]) {
+        if (current.risk > min_risk[current.position.e][current.position.n][current.steps]) {
             continue;
         }
         
-        if (sites_equal({current.e, current.n}, delivery)) {
+        if (sites_equal(current.position, delivery)) {
             if (current.risk < profile[current.steps]) {
                 profile[current.steps] = current.risk;
                 if (result.goal_steps == -1 || current.steps < result.goal_steps) {
@@ -101,13 +101,13 @@ OutboundResult OrderPlanner::search_outbound(
             }
         }
         
-        if (current.steps + heuristic(current.e, current.n) > MAX_STEPS) {
+        if (current.steps + heuristic(current.position.e, current.position.n) > MAX_STEPS) {
             continue;
         }
         
         for (int i = 0; i < NUM_DIRECTIONS; i++) {
-            const int ne = static_cast<int>(current.e) + DIRECTION_DE[i];
-            const int nn = static_cast<int>(current.n) + DIRECTION_DN[i];
+            const int ne = static_cast<int>(current.position.e) + DIRECTION_DE[i];
+            const int nn = static_cast<int>(current.position.n) + DIRECTION_DN[i];
             
             if (!is_site_valid(map, ne, nn)) {
                 continue;
@@ -125,11 +125,11 @@ OutboundResult OrderPlanner::search_outbound(
                 min_risk[ne][nn][new_steps] = new_risk;
                 
                 auto parent_node = std::make_shared<PathNode>();
-                parent_node->position = {current.e, current.n};
+                parent_node->position = current.position;
                 parent_node->steps = current.steps;
                 parent_map[ne][nn][new_steps] = parent_node;
                 
-                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_steps, new_risk});
+                pq.push({{static_cast<size_t>(ne), static_cast<size_t>(nn)}, new_steps, new_risk});
             }
         }
     }
@@ -174,7 +174,7 @@ InboundResult OrderPlanner::search_inbound(
     std::priority_queue<AugmentedState, std::vector<AugmentedState>, std::greater<AugmentedState>> pq;
     
     min_risk[delivery.e][delivery.n][0] = get_density_at(map, delivery);
-    pq.push({delivery.e, delivery.n, 0, get_density_at(map, delivery)});
+    pq.push({delivery, 0, get_density_at(map, delivery)});
     
     RiskProfile profile(PROFILE_SIZE, INT_MAX);
     InboundResult result;
@@ -184,24 +184,24 @@ InboundResult OrderPlanner::search_inbound(
         const AugmentedState current = pq.top();
         pq.pop();
         
-        if (current.risk > min_risk[current.e][current.n][current.steps]) {
+        if (current.risk > min_risk[current.position.e][current.position.n][current.steps]) {
             continue;
         }
         
-        if (is_dock(current.e, current.n)) {
+        if (is_dock(current.position.e, current.position.n)) {
             if (current.risk < profile[current.steps]) {
                 profile[current.steps] = current.risk;
-                result.goal_states[current.steps] = {current.e, current.n};
+                result.goal_states[current.steps] = current.position;
             }
         }
         
-        if (current.steps + heuristic(current.e, current.n) > MAX_STEPS) {
+        if (current.steps + heuristic(current.position.e, current.position.n) > MAX_STEPS) {
             continue;
         }
         
         for (int i = 0; i < NUM_DIRECTIONS; i++) {
-            const int ne = static_cast<int>(current.e) + DIRECTION_DE[i];
-            const int nn = static_cast<int>(current.n) + DIRECTION_DN[i];
+            const int ne = static_cast<int>(current.position.e) + DIRECTION_DE[i];
+            const int nn = static_cast<int>(current.position.n) + DIRECTION_DN[i];
             
             if (!is_site_valid(map, ne, nn)) {
                 continue;
@@ -219,11 +219,11 @@ InboundResult OrderPlanner::search_inbound(
                 min_risk[ne][nn][new_steps] = new_risk;
                 
                 auto parent_node = std::make_shared<PathNode>();
-                parent_node->position = {current.e, current.n};
+                parent_node->position = current.position;
                 parent_node->steps = current.steps;
                 parent_map[ne][nn][new_steps] = parent_node;
                 
-                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_steps, new_risk});
+                pq.push({{static_cast<size_t>(ne), static_cast<size_t>(nn)}, new_steps, new_risk});
             }
         }
     }

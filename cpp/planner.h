@@ -11,10 +11,9 @@ namespace OrderPlanner {
     
     // ========== Data Structures ==========
     
-    // Augmented state: (row, col, steps_taken)
+    // Augmented state: (position, steps_taken, accumulated_risk)
     struct AugmentedState {
-        size_t e;
-        size_t n;
+        Site position;
         int steps;
         int risk;
         
