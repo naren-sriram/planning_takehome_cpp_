@@ -49,8 +49,6 @@ namespace OrderPlanner {
         RiskProfile profile;
         Site goal_state;
         int goal_steps;
-        int nodes_expanded = 0;  // Nodes popped from priority queue
-        int nodes_generated = 0;  // Nodes added to priority queue
     };
     
     OutboundResult search_outbound(
@@ -66,8 +64,6 @@ namespace OrderPlanner {
     struct InboundResult {
         RiskProfile profile;
         std::vector<Site> goal_states;  // goal_states[k] = dock reached at step k
-        int nodes_expanded = 0;  // Nodes popped from priority queue
-        int nodes_generated = 0;  // Nodes added to priority queue
     };
     
     InboundResult search_inbound(
@@ -98,19 +94,8 @@ namespace OrderPlanner {
         const std::vector<std::vector<std::vector<std::shared_ptr<PathNode>>>>& parent_map
     );
     
-    // Search statistics
-    struct SearchStats {
-        int outbound_nodes_expanded = 0;
-        int outbound_nodes_generated = 0;
-        int inbound_nodes_expanded = 0;
-        int inbound_nodes_generated = 0;
-    };
-    
     // Main entry point
     Path find_path(const Map& map, const Order& order);
-    
-    // Get last search statistics (for logging)
-    SearchStats get_last_search_stats();
     
     // For ablation study compatibility
     double get_last_used_lambda();

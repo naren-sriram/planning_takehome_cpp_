@@ -91,10 +91,6 @@ namespace OrderPlanner {
         int order_num,
         int outbound_steps,
         int inbound_steps,
-        int total_density,
-        int outbound_nodes_expanded = 0,
-        int outbound_nodes_generated = 0,
-        int inbound_nodes_expanded = 0,
-        int inbound_nodes_generated = 0
+        int total_density
     );
 }

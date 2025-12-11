@@ -39,13 +39,8 @@ int main(int argc, char *argv[]) {
         // Steps = nodes - 1 for each segment
         int outbound_steps = path.outbound.empty() ? 0 : path.outbound.size() - 1;
         int inbound_steps = path.inbound.empty() ? 0 : path.inbound.size() - 1;
-        
-        // Get search statistics
-        SearchStats stats = get_last_search_stats();
         log_ablation_result("ablation_results.csv", lambda_used, order_num - 1,
-            outbound_steps, inbound_steps, density,
-            stats.outbound_nodes_expanded, stats.outbound_nodes_generated,
-            stats.inbound_nodes_expanded, stats.inbound_nodes_generated);
+            outbound_steps, inbound_steps, density);
     }
     
     std::cerr << "\r[" << total_orders << "/" << total_orders << "] Completed all orders!     " << std::endl;
