@@ -12,13 +12,16 @@ namespace OrderPlanner {
     // ========== Data Structures ==========
     
     // Augmented state: (row, col, steps_taken)
+    // For A*: risk = g (accumulated cost), f_value = g + h (for priority queue)
     struct AugmentedState {
         size_t e;
         size_t n;
         int steps;
-        int risk;
+        int risk;  // g: accumulated density cost
+        int f_value;  // f = g + h: for A* priority queue ordering
         
         bool operator>(const AugmentedState& other) const {
+            if (f_value != other.f_value) return f_value > other.f_value;
             if (risk != other.risk) return risk > other.risk;
             return steps > other.steps;
         }
@@ -36,8 +39,22 @@ namespace OrderPlanner {
     
     // ========== Core Functions ==========
     
-    // Compute distance from all cells to nearest dock (BFS) for heuristic
+    // Compute distance from all cells to nearest dock (BFS) for step-based heuristic
     std::vector<std::vector<int>> compute_distance_to_nearest_dock(
+        const Map& map,
+        const std::vector<Site>& docks
+    );
+    
+    // Compute minimum density cost from all cells to a goal (Dijkstra backward from goal)
+    // Returns cost_map[row][col] = minimum density to reach goal from (row, col)
+    std::vector<std::vector<int>> compute_density_cost_map(
+        const Map& map,
+        const Site& goal
+    );
+    
+    // Compute minimum density cost from all cells to nearest dock (Dijkstra backward from all docks)
+    // Returns cost_map[row][col] = minimum density to reach any dock from (row, col)
+    std::vector<std::vector<int>> compute_density_cost_to_nearest_dock(
         const Map& map,
         const std::vector<Site>& docks
     );
@@ -55,6 +72,7 @@ namespace OrderPlanner {
         const Map& map,
         const Site& start,
         const Site& delivery,
+        const std::vector<std::vector<int>>& density_cost_map,
         std::vector<std::vector<std::vector<std::shared_ptr<PathNode>>>>& parent_map
     );
     
@@ -71,6 +89,7 @@ namespace OrderPlanner {
         const Site& delivery,
         const std::vector<Site>& docks,
         const std::vector<std::vector<int>>& dist_to_docks,
+        const std::vector<std::vector<int>>& density_cost_map,
         std::vector<std::vector<std::vector<std::shared_ptr<PathNode>>>>& parent_map
     );
     

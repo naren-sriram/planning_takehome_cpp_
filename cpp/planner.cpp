@@ -49,12 +49,103 @@ std::vector<std::vector<int>> OrderPlanner::compute_distance_to_nearest_dock(
     return dist;
 }
 
+// ========== Density Cost Maps (Dijkstra) ==========
+
+std::vector<std::vector<int>> OrderPlanner::compute_density_cost_map(
+    const Map& map,
+    const Site& goal
+) {
+    const size_t rows = get_map_rows(map);
+    const size_t cols = get_map_cols(map);
+    std::vector<std::vector<int>> cost(rows, std::vector<int>(cols, INT_MAX));
+    
+    std::priority_queue<DijkstraNode, std::vector<DijkstraNode>, std::greater<DijkstraNode>> pq;
+    
+    cost[goal.e][goal.n] = 0;
+    pq.push({goal.e, goal.n, 0.0});
+    
+    while (!pq.empty()) {
+        const DijkstraNode current = pq.top();
+        pq.pop();
+        
+        if (static_cast<int>(current.cost) > cost[current.e][current.n]) {
+            continue;
+        }
+        
+        for (int i = 0; i < NUM_DIRECTIONS; i++) {
+            const int ne = static_cast<int>(current.e) + DIRECTION_DE[i];
+            const int nn = static_cast<int>(current.n) + DIRECTION_DN[i];
+            
+            if (!is_site_valid(map, ne, nn)) {
+                continue;
+            }
+            
+            const Site neighbor = {static_cast<size_t>(ne), static_cast<size_t>(nn)};
+            const int edge_cost = get_density_at(map, neighbor);
+            const int new_cost = cost[current.e][current.n] + edge_cost;
+            
+            if (new_cost < cost[ne][nn]) {
+                cost[ne][nn] = new_cost;
+                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), static_cast<double>(new_cost)});
+            }
+        }
+    }
+    
+    return cost;
+}
+
+std::vector<std::vector<int>> OrderPlanner::compute_density_cost_to_nearest_dock(
+    const Map& map,
+    const std::vector<Site>& docks
+) {
+    const size_t rows = get_map_rows(map);
+    const size_t cols = get_map_cols(map);
+    std::vector<std::vector<int>> cost(rows, std::vector<int>(cols, INT_MAX));
+    
+    std::priority_queue<DijkstraNode, std::vector<DijkstraNode>, std::greater<DijkstraNode>> pq;
+    
+    for (const auto& dock : docks) {
+        cost[dock.e][dock.n] = 0;
+        pq.push({dock.e, dock.n, 0.0});
+    }
+    
+    while (!pq.empty()) {
+        const DijkstraNode current = pq.top();
+        pq.pop();
+        
+        if (static_cast<int>(current.cost) > cost[current.e][current.n]) {
+            continue;
+        }
+        
+        for (int i = 0; i < NUM_DIRECTIONS; i++) {
+            const int ne = static_cast<int>(current.e) + DIRECTION_DE[i];
+            const int nn = static_cast<int>(current.n) + DIRECTION_DN[i];
+            
+            if (!is_site_valid(map, ne, nn)) {
+                continue;
+            }
+            
+            const Site neighbor = {static_cast<size_t>(ne), static_cast<size_t>(nn)};
+            const int edge_cost = get_density_at(map, neighbor);
+            const int new_cost = cost[current.e][current.n] + edge_cost;
+            
+            if (new_cost < cost[ne][nn]) {
+                cost[ne][nn] = new_cost;
+                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), static_cast<double>(new_cost)});
+            }
+        }
+    }
+    
+    return cost;
+}
+
 // ========== Phase A: Outbound Search ==========
 
 OutboundResult OrderPlanner::search_outbound(
     const Map& map,
     const Site& start,
     const Site& delivery,
+    const std::vector<std::vector<int>>& density_cost_map,
     std::vector<std::vector<std::vector<std::shared_ptr<PathNode>>>>& parent_map
 ) {
     const size_t rows = get_map_rows(map);
@@ -68,7 +159,17 @@ OutboundResult OrderPlanner::search_outbound(
         cols, std::vector<std::shared_ptr<PathNode>>(PROFILE_SIZE, nullptr)
     ));
     
-    auto heuristic = [&](size_t e, size_t n) -> int {
+    // Density heuristic: minimum density cost from current position to delivery
+    auto density_heuristic = [&](size_t e, size_t n) -> int {
+        if (density_cost_map[e][n] == INT_MAX) {
+            // If unreachable, use a large value (but still admissible)
+            return INT_MAX / 2;
+        }
+        return density_cost_map[e][n];
+    };
+    
+    // Step-based heuristic for constraint pruning (Chebyshev distance)
+    auto step_heuristic = [&](size_t e, size_t n) -> int {
         const int de = static_cast<int>(e) - static_cast<int>(delivery.e);
         const int dn = static_cast<int>(n) - static_cast<int>(delivery.n);
         return std::max(std::abs(de), std::abs(dn));
@@ -76,8 +177,10 @@ OutboundResult OrderPlanner::search_outbound(
     
     std::priority_queue<AugmentedState, std::vector<AugmentedState>, std::greater<AugmentedState>> pq;
     
-    min_risk[start.e][start.n][0] = get_density_at(map, start);
-    pq.push({start.e, start.n, 0, get_density_at(map, start)});
+    const int start_risk = get_density_at(map, start);
+    const int start_f = start_risk + density_heuristic(start.e, start.n);
+    min_risk[start.e][start.n][0] = start_risk;
+    pq.push({start.e, start.n, 0, start_risk, start_f});
     
     RiskProfile profile(PROFILE_SIZE, INT_MAX);
     OutboundResult result;
@@ -101,7 +204,8 @@ OutboundResult OrderPlanner::search_outbound(
             }
         }
         
-        if (current.steps + heuristic(current.e, current.n) > MAX_STEPS) {
+        // Step-bound pruning using step heuristic
+        if (current.steps + step_heuristic(current.e, current.n) > MAX_STEPS) {
             continue;
         }
         
@@ -129,7 +233,10 @@ OutboundResult OrderPlanner::search_outbound(
                 parent_node->steps = current.steps;
                 parent_map[ne][nn][new_steps] = parent_node;
                 
-                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_steps, new_risk});
+                // A*: f = g + h
+                const int h = density_heuristic(ne, nn);
+                const int f_value = new_risk + h;
+                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_steps, new_risk, f_value});
             }
         }
     }
@@ -145,6 +252,7 @@ InboundResult OrderPlanner::search_inbound(
     const Site& delivery,
     const std::vector<Site>& docks,
     const std::vector<std::vector<int>>& dist_to_docks,
+    const std::vector<std::vector<int>>& density_cost_map,
     std::vector<std::vector<std::vector<std::shared_ptr<PathNode>>>>& parent_map
 ) {
     const size_t rows = get_map_rows(map);
@@ -167,14 +275,26 @@ InboundResult OrderPlanner::search_inbound(
         return false;
     };
     
-    auto heuristic = [&](size_t e, size_t n) -> int {
+    // Density heuristic: minimum density cost from current position to nearest dock
+    auto density_heuristic = [&](size_t e, size_t n) -> int {
+        if (density_cost_map[e][n] == INT_MAX) {
+            // If unreachable, use a large value (but still admissible)
+            return INT_MAX / 2;
+        }
+        return density_cost_map[e][n];
+    };
+    
+    // Step-based heuristic for constraint pruning (distance to nearest dock)
+    auto step_heuristic = [&](size_t e, size_t n) -> int {
         return dist_to_docks[e][n];
     };
     
     std::priority_queue<AugmentedState, std::vector<AugmentedState>, std::greater<AugmentedState>> pq;
     
-    min_risk[delivery.e][delivery.n][0] = get_density_at(map, delivery);
-    pq.push({delivery.e, delivery.n, 0, get_density_at(map, delivery)});
+    const int start_risk = get_density_at(map, delivery);
+    const int start_f = start_risk + density_heuristic(delivery.e, delivery.n);
+    min_risk[delivery.e][delivery.n][0] = start_risk;
+    pq.push({delivery.e, delivery.n, 0, start_risk, start_f});
     
     RiskProfile profile(PROFILE_SIZE, INT_MAX);
     InboundResult result;
@@ -195,7 +315,8 @@ InboundResult OrderPlanner::search_inbound(
             }
         }
         
-        if (current.steps + heuristic(current.e, current.n) > MAX_STEPS) {
+        // Step-bound pruning using step heuristic
+        if (current.steps + step_heuristic(current.e, current.n) > MAX_STEPS) {
             continue;
         }
         
@@ -223,7 +344,10 @@ InboundResult OrderPlanner::search_inbound(
                 parent_node->steps = current.steps;
                 parent_map[ne][nn][new_steps] = parent_node;
                 
-                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_steps, new_risk});
+                // A*: f = g + h
+                const int h = density_heuristic(ne, nn);
+                const int f_value = new_risk + h;
+                pq.push({static_cast<size_t>(ne), static_cast<size_t>(nn), new_steps, new_risk, f_value});
             }
         }
     }
@@ -296,17 +420,21 @@ std::vector<Site> OrderPlanner::reconstruct_path(
 Path OrderPlanner::find_path(const Map& map, const Order& order) {
     last_used_lambda = 0.0;  // Not used in this approach, but kept for compatibility
     
-    // Precompute distance to nearest dock for heuristic
+    // Precompute heuristics
     const auto dist_to_docks = compute_distance_to_nearest_dock(map, map.docks);
+    const auto outbound_density_cost = compute_density_cost_map(map, order.delivery);
+    const auto inbound_density_cost = compute_density_cost_to_nearest_dock(map, map.docks);
     
     // Phase A: Outbound search
     std::vector<std::vector<std::vector<std::shared_ptr<PathNode>>>> outbound_parents;
-    const auto outbound_result = search_outbound(map, order.origin_dock, order.delivery, outbound_parents);
+    const auto outbound_result = search_outbound(
+        map, order.origin_dock, order.delivery, outbound_density_cost, outbound_parents
+    );
     
     // Phase B: Inbound search
     std::vector<std::vector<std::vector<std::shared_ptr<PathNode>>>> inbound_parents;
     const auto inbound_result = search_inbound(
-        map, order.delivery, map.docks, dist_to_docks, inbound_parents
+        map, order.delivery, map.docks, dist_to_docks, inbound_density_cost, inbound_parents
     );
     
     // Phase C: Merge
