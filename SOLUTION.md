@@ -22,11 +22,11 @@ The algorithm operates in three phases:
 
 3. **Profile Merging**: The planner combines the results from both phases to find the optimal split between outbound and inbound steps. It selects the combination that minimizes total population density while ensuring the combined path length stays within the 110-step budget. This is achieved by iterating through all valid `(i, j)` pairs such that `i + j <= 110` and selecting the pair minimizing `outbound_profile[i] + inbound_profile[j]`.
 
-The algorithm uses an augmented state space where each state represents `(position, steps_taken, accumulated_density)`. This allows the planner to simultaneously optimize for both path length (constrained to ≤110 steps) and population density (minimized). The algorithm uses an augmented state space where each state is distinct based on `(position, steps_taken)`. This allows the planner to simultaneously optimize for both path length (constrained to ≤110 steps) and population density (minimized). (See Appendix A for detailed optimality guarantees.)
+The algorithm uses an augmented state space where each state represents `(position, steps_taken, accumulated_density)`. This allows the planner to simultaneously optimize for both path length (constrained to ≤110 steps) and population density (minimized). (See Appendix A for detailed optimality guarantees.)
 
 ![Planner Architecture](visualizer/Planner_Zipline.png)
 
-**Search Strategy**: The planner utilizes **Dijkstra's Algorithm** on the augmented state graph. The Priority Queue orders states primarily by **Accumulated Risk**, ensuring that the first time a state `(Location, Steps)` is finalized, it represents the minimum risk path to that specific state.
+**Search Strategy**: The planner utilizes **Dijkstra's Algorithm** on the augmented state graph. The Priority Queue orders states primarily by **Accumulated Risk**, ensuring that the first time a state `(Location, Steps)` is popped, it represents the minimum risk path to that specific state.
 
 ### Cost Functions and Heuristics
 
