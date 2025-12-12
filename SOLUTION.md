@@ -4,13 +4,21 @@
 
 The path planner uses a **Constrained Shortest Path Problem (CSPP)** approach to find optimal routes. The algorithm operates in three phases:
 
-1. **Outbound Search**: Starting from the origin dock, the planner performs A* search for paths to the delivery location. It explores all possible routes while tracking both the number of steps taken and the accumulated population density (risk) along each path. Output of this phase is a risk profile for steps 0 to MAX_STEPS (110) where outbound_profile[i] is the minimum density or risk needed to reach delivery site in 'i' steps.
+1. **Outbound Search**: Starting from the origin dock, the planner performs a search on the augmented state space `(position, steps)` to find paths to the delivery location. It explores all possible routes while tracking both the number of steps taken and the accumulated population density (risk). The output is a **Risk Profile** for steps 0 to MAX_STEPS (110), where `outbound_profile[k]` is the strict minimum density (risk) required to reach the delivery site in exactly `k` steps.
 
-2. **Inbound Search**: Independently, the planner performs A* search from the delivery location to find paths to any available dock. Similar to the outbound phase, it tracks steps and density for all possible routes. Output of this phase similarly, is a risk profile for steps 0 to MAX_STEPS (110) where inbound_profile[i] is the mimimun density or risk needed to reach ANY doc from the delivery site in 'i' steps. Note that i here also ranges from 0 to MAX_STEPS, because, the searches are independent.
+2. **Inbound Search**: Independently, the planner performs a similar augmented search from the delivery location to find paths to *any* available dock. The output is a risk profile `inbound_profile[k]`, representing the minimum risk to reach a dock from the delivery site in exactly `k` steps.
 
-3. **Profile Merging**: The planner combines the results from both phases to find the optimal split between outbound and inbound steps. It selects the combination that minimizes total population density while ensuring the combined path length stays within the 110-step budget by running two loops ; one for outbound from 0 to MAX_STEPS (i) and one for inbound from 0 to MAX_STEPS - i (j) and picking the min(outbound[i] + inbound[j]).
+3. **Profile Merging**: The planner combines the results from both phases to find the optimal split between outbound and inbound steps. It selects the combination that minimizes total population density while ensuring the combined path length stays within the 110-step budget. This is achieved by iterating through all valid `(i, j)` pairs such that `i + j <= 110` and selecting the pair minimizing `outbound_profile[i] + inbound_profile[j]`.
 
-The algorithm uses an augmented state space where each state represents `(position, steps_taken, accumulated_density)`. This allows the planner to simultaneously optimize for both path length (constrained to ≤110 steps) and population density (minimized). The search uses heuristics to efficiently explore the space while guaranteeing optimality within the step constraint. (See Appendix A for detailed optimality guarantees.)
+The algorithm uses an augmented state space where each state represents `(position, steps_taken, accumulated_density)`. This allows the planner to simultaneously optimize for both path length (constrained to ≤110 steps) and population density (minimized). The algorithm uses an augmented state space where each state is distinct based on `(position, steps_taken)`. This allows the planner to simultaneously optimize for both path length (constrained to ≤110 steps) and population density (minimized). (See Appendix A for detailed optimality guarantees.)
+
+![Planner Architecture](visualizer/Planner_Zipline.png)
+
+**Search Strategy**: The planner utilizes **Dijkstra's Algorithm** on the augmented state graph. The Priority Queue orders states primarily by **Accumulated Risk**, ensuring that the first time a state `(Location, Steps)` is finalized, it represents the minimum risk path to that specific state.
+
+### Cost Functions and Heuristics
+
+**Cost Function**: The cost optimized is the accumulated sum of population densities (Risk):
 
 ![Planner Architecture](visualizer/Planner_Zipline.png)
 
@@ -22,17 +30,12 @@ g(s) = Σ_{i=1}^{steps} density(position_i)
 ```
 where `g(s)` represents the accumulated density (risk) from the start to state `s`.
 
-**Outbound Heuristic**: For the outbound search (origin → delivery), I use the Chebyshev distance (L∞ norm) to the delivery location:
-```
-h_outbound(s) = max(|e_s - e_delivery|, |n_s - n_delivery|)
-```
-This heuristic is admissible (never overestimates) because the minimum steps required to reach the goal in an 8-connected grid is exactly the Chebyshev distance.
 
-**Inbound Heuristic**: For the inbound search (delivery → dock), I use a pre-computed distance transform via BFS from all docks:
-```
-h_inbound(s) = min_{dock ∈ Docks} distance_BFS(s, dock)
-```
-This heuristic is also admissible as it represents the true minimum steps to reach the nearest dock.
+**Feasibility Pruning (Heuristics)**: While the search is driven by density cost, it employs spatial heuristics to prune paths that cannot possibly reach the goal within the step budget.
+* **Outbound Pruning**: `steps_taken + Chebyshev_Distance(current, target) > 110`
+* **Inbound Pruning**: `steps_taken + BFS_Distance(current, nearest_dock) > 110`
+
+These heuristics are **admissible with respect to steps**, ensuring that we never prune a path that could theoretically complete the mission within the budget.
 
 **Priority Queue Ordering**: States are ordered by accumulated density (risk), with ties broken by step count:
 ```
@@ -198,7 +201,7 @@ The CSPP approach provides **provable optimality** in terms of density minimizat
 π* = argmin_{π: |π| ≤ B} Σ_{v ∈ π} density(v)
 ```
 
-**Proof Sketch**:
+**Proof of Correctness**:
 
 1. **Complete State Space Exploration**: By augmenting the state space to `S = {(position, steps) : steps ≤ B}`, the algorithm explores all feasible paths. For each state `s = (pos, k)`, it maintains:
    ```
@@ -222,7 +225,7 @@ The CSPP approach provides **provable optimality** in terms of density minimizat
    ```
    This exhaustive evaluation guarantees the globally optimal solution.
 
-4. **Admissible Heuristics**: The heuristics used are admissible (never overestimate), ensuring A* optimality. The step-based pruning `steps + h(s) > B` is sound because it only eliminates states that cannot reach the goal within the budget.
+4. **Feasibility Pruning**: The heuristic functions `h(s)` (Chebyshev/BFS distance) are used strictly for **pruning**. A state is discarded only if `current_steps + h(s) > MAX_STEPS`. Since `h(s)` is admissible (it never overestimates the minimum steps required), this pruning never discards a feasible solution, preserving optimality.
 
 5. **No Budget Myopia**: Unlike sequential planning, the merge phase evaluates all valid `(k₁, k₂)` pairs simultaneously, preventing suboptimal, myopic budget allocation.
 
