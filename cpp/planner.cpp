@@ -10,7 +10,7 @@ using namespace OrderPlanner;
 
 static double last_used_lambda = 0.0;
 
-// ========== Distance to Nearest Dock (BFS) ==========
+//  Distance to Nearest Dock (BFS) 
 
 std::vector<std::vector<int>> OrderPlanner::compute_distance_to_nearest_dock(
     const Map& map,
@@ -49,7 +49,7 @@ std::vector<std::vector<int>> OrderPlanner::compute_distance_to_nearest_dock(
     return dist;
 }
 
-// ========== Phase A: Outbound Search ==========
+//  Outbound Search 
 
 OutboundResult OrderPlanner::search_outbound(
     const Map& map,
@@ -138,7 +138,7 @@ OutboundResult OrderPlanner::search_outbound(
     return result;
 }
 
-// ========== Phase B: Inbound Search ==========
+// Inbound Search 
 
 InboundResult OrderPlanner::search_inbound(
     const Map& map,
@@ -232,7 +232,7 @@ InboundResult OrderPlanner::search_inbound(
     return result;
 }
 
-// ========== Phase C: Merge Profiles ==========
+// Merge Profiles 
 
 MergeResult OrderPlanner::merge_profiles(
     const RiskProfile& outbound_profile,
@@ -245,7 +245,7 @@ MergeResult OrderPlanner::merge_profiles(
             continue;
         }
         
-        for (int j = 0; j <= MAX_STEPS - i; j++) {
+        for (int j = 0; j < MAX_STEPS - i; j++) {
             if (inbound_profile[j] == INT_MAX) {
                 continue;
             }
@@ -263,7 +263,7 @@ MergeResult OrderPlanner::merge_profiles(
     return result;
 }
 
-// ========== Path Reconstruction ==========
+// Path Reconstruction 
 
 std::vector<Site> OrderPlanner::reconstruct_path(
     const Site& goal,
@@ -291,7 +291,7 @@ std::vector<Site> OrderPlanner::reconstruct_path(
     return path;
 }
 
-// ========== Main Entry Point ==========
+
 
 Path OrderPlanner::find_path(const Map& map, const Order& order) {
     last_used_lambda = 0.0;  // Not used in this approach, but kept for compatibility
@@ -299,17 +299,20 @@ Path OrderPlanner::find_path(const Map& map, const Order& order) {
     // Precompute distance to nearest dock for heuristic
     const auto dist_to_docks = compute_distance_to_nearest_dock(map, map.docks);
     
-    // Phase A: Outbound search
+    // Note that outbound search and inbound search are independent of each other. Result of one
+    // does not affect the result of the other. They both affect the final path.
+
+    // Outbound search
     std::vector<std::vector<std::vector<std::shared_ptr<PathNode>>>> outbound_parents;
     const auto outbound_result = search_outbound(map, order.origin_dock, order.delivery, outbound_parents);
     
-    // Phase B: Inbound search
+    // Inbound search
     std::vector<std::vector<std::vector<std::shared_ptr<PathNode>>>> inbound_parents;
     const auto inbound_result = search_inbound(
         map, order.delivery, map.docks, dist_to_docks, inbound_parents
     );
     
-    // Phase C: Merge
+    // Merge profiles
     const auto merge_result = merge_profiles(outbound_result.profile, inbound_result.profile);
     
     if (!merge_result.success) {

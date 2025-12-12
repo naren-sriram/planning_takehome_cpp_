@@ -104,7 +104,7 @@ void OrderPlanner::print_path(const Path &path, std::ostream& out) {
     out << std::endl;
 }
 
-// ========== Helper Functions Implementation ==========
+//  ------ Helper Functions --------------
 
 bool OrderPlanner::sites_equal(const Site& a, const Site& b) {
     return a.e == b.e && a.n == b.n;
@@ -126,7 +126,7 @@ uint8_t OrderPlanner::get_density_at(const Map& map, const Site& site) {
     return map.density[site.e][site.n];
 }
 
-// ========== Ablation Study ==========
+//  ------ Ablation Study --------------
 
 int OrderPlanner::compute_path_density(const Map& map, const Path& path) {
     int total = 0;
@@ -135,6 +135,7 @@ int OrderPlanner::compute_path_density(const Map& map, const Path& path) {
     return total;
 }
 
+//  Lambda is deprecated now for this approach 
 void OrderPlanner::log_ablation_result(
     const std::string& filename,
     double lambda,
