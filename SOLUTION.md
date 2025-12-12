@@ -7,9 +7,9 @@ The path planner uses a **Constrained Shortest Path Problem (CSPP)** approach to
 ***
 **Note on Terminology: Constrained Shortest Path (CSPP)**
 
-In graph theory, "Shortest Path" refers to minimizing the accumulated edge weight (in this case, **Risk/Density**), not necessarily physical distance. Therefore, the algorithm minimizes **Risk** subject to a constraint on **Distance (Steps)**. This specific variant is often called the **Resource-Constrained Shortest Path Problem (RCSPP)**.
+In graph theory, "Shortest Path" refers to minimizing the accumulated edge weight (in this case, **Risk/Density**), not necessarily physical distance. This algorithm minimizes **Risk** subject to a constraint on **Distance (Steps)**. This specific variant is often called the **Resource-Constrained Shortest Path Problem (RCSPP)**.
 
-* **Objective**: Minimize Cost (Density)
+* **Objective**: Minimize Cost (Density $\le$ Risk)
 * **Resource**: Steps (Flight Length)
 * **Constraint**: Resource $\le$ Budget
 ***
