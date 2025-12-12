@@ -12,7 +12,7 @@ The path planner uses a **Constrained Shortest Path Problem (CSPP)** approach to
 
 The algorithm uses an augmented state space where each state represents `(position, steps_taken, accumulated_density)`. This allows the planner to simultaneously optimize for both path length (constrained to ≤110 steps) and population density (minimized). The search uses A*-like heuristics to efficiently explore the space while guaranteeing optimality within the step constraint. (See Appendix A for detailed optimality guarantees.)
 
-![Planner Architecture](visualizer/Planner.png)
+![Planner Architecture](visualizer/Planner_Zipline.png)
 
 ### Cost Functions and Heuristics
 
