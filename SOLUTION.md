@@ -4,31 +4,107 @@
 
 The path planner uses a **Constrained Shortest Path Problem (CSPP)** approach to find optimal drone delivery routes. The algorithm operates in three phases:
 
-1. **Outbound Search**: Starting from the origin dock, the planner searches for paths to the delivery location. It explores all possible routes while tracking both the number of steps taken and the accumulated population density (risk) along each path.
+1. **Outbound Search**: Starting from the origin dock, the planner performs A* search for paths to the delivery location. It explores all possible routes while tracking both the number of steps taken and the accumulated population density (risk) along each path.
 
-2. **Inbound Search**: After delivery, the planner searches from the delivery location to find paths to any available dock. Similar to the outbound phase, it tracks steps and density for all possible routes.
+2. **Inbound Search**: After delivery, the planner performs A* search from the delivery location to find paths to any available dock. Similar to the outbound phase, it tracks steps and density for all possible routes.
 
 3. **Profile Merging**: The planner combines the results from both phases to find the optimal split between outbound and inbound steps. It selects the combination that minimizes total population density while ensuring the combined path length stays within the 110-step budget.
 
 The algorithm uses an augmented state space where each state represents `(position, steps_taken, accumulated_density)`. This allows the planner to simultaneously optimize for both path length (constrained to ≤110 steps) and population density (minimized). The search uses A*-like heuristics to efficiently explore the space while guaranteeing optimality within the step constraint.
 
+### Cost Functions and Heuristics
+
+**Cost Function**: The cost accumulated along a path is the sum of population densities:
+```
+g(s) = Σ_{i=1}^{steps} density(position_i)
+```
+where `g(s)` represents the accumulated density (risk) from the start to state `s`.
+
+**Outbound Heuristic**: For the outbound search (origin → delivery), we use the Chebyshev distance (L∞ norm) to the delivery location:
+```
+h_outbound(s) = max(|e_s - e_delivery|, |n_s - n_delivery|)
+```
+This heuristic is admissible (never overestimates) because the minimum steps required to reach the goal in an 8-connected grid is exactly the Chebyshev distance.
+
+**Inbound Heuristic**: For the inbound search (delivery → dock), we use a pre-computed distance transform via BFS from all docks:
+```
+h_inbound(s) = min_{dock ∈ Docks} distance_BFS(s, dock)
+```
+This heuristic is also admissible as it represents the true minimum steps to reach the nearest dock.
+
+**Priority Queue Ordering**: States are ordered by accumulated density (risk), with ties broken by step count:
+```
+priority(s) = (g(s), steps(s))
+```
+This ensures we explore lower-density paths first while maintaining optimality guarantees.
+
 ### Optimality Guarantees
 
-The CSPP approach provides **provable optimality** in terms of density minimization subject to the step constraint:
+The CSPP approach provides **provable optimality** in terms of density minimization subject to the step constraint. The mathematical guarantee is as follows:
 
-1. **Complete State Space Exploration**: By augmenting the state space to include steps taken, the algorithm explores all feasible paths that satisfy the step constraint. For each position and step count combination, it maintains the minimum density path to that state.
+**Theorem**: Given a path budget `B = 110` steps, the algorithm finds the path `π*` that minimizes total density:
+```
+π* = argmin_{π: |π| ≤ B} Σ_{v ∈ π} density(v)
+```
 
-2. **Optimal Substructure**: The problem exhibits optimal substructure—the optimal path to any state `(position, steps)` must consist of optimal subpaths. The algorithm exploits this by storing the minimum density for each `(position, steps)` pair and only updating when a better path is found.
+**Proof Sketch**:
 
-3. **Global Optimization via Profile Merging**: The three-phase approach ensures global optimality across both legs. The outbound and inbound searches generate complete risk profiles (minimum density for each step count), and the merge phase exhaustively evaluates all valid combinations to find the globally optimal split.
+1. **Complete State Space Exploration**: By augmenting the state space to `S = {(position, steps) : steps ≤ B}`, the algorithm explores all feasible paths. For each state `s = (pos, k)`, it maintains:
+   ```
+   g*(s) = min_{π: start → s, |π| = k} Σ_{v ∈ π} density(v)
+   ```
+   This ensures all optimal subpaths are discovered.
 
-4. **No Budget Myopia**: Unlike sequential planning approaches, the CSPP method considers the entire path budget simultaneously. The merge phase evaluates all possible allocations of the 110-step budget between outbound and inbound legs, preventing the "budget myopia" problem where the first leg greedily consumes most of the budget.
+2. **Optimal Substructure**: The problem exhibits optimal substructure. If `π* = [s₀, s₁, ..., s_k]` is optimal, then any prefix `[s₀, ..., s_i]` must also be optimal. The algorithm exploits this by storing `g*(s)` and only updating when `g_new(s) < g*(s)`.
+
+3. **Global Optimization via Profile Merging**: The outbound search generates:
+   ```
+   R_outbound[k] = min_{π: origin → delivery, |π| = k} Σ_{v ∈ π} density(v)
+   ```
+   Similarly, the inbound search generates:
+   ```
+   R_inbound[k] = min_{π: delivery → dock, |π| = k} Σ_{v ∈ π} density(v)
+   ```
+   The merge phase finds:
+   ```
+   (k₁*, k₂*) = argmin_{k₁ + k₂ < B} (R_outbound[k₁] + R_inbound[k₂])
+   ```
+   This exhaustive evaluation guarantees the globally optimal solution.
+
+4. **Admissible Heuristics**: The heuristics used are admissible (never overestimate), ensuring A* optimality. The step-based pruning `steps + h(s) > B` is sound because it only eliminates states that cannot reach the goal within the budget.
+
+5. **No Budget Myopia**: Unlike sequential planning, the merge phase evaluates all valid `(k₁, k₂)` pairs simultaneously, preventing suboptimal budget allocation.
 
 ### Comparison with Lambda-Based Approach
 
-During development, we explored a weighted A* approach using a lambda parameter to balance density and path length. However, this approach suffered from a **budget myopia problem**:
+During development, I explored a weighted A* approach using a lambda parameter to balance density and path length. However, this approach suffered from a **budget myopia problem**:
 
-**The Budget Myopia Problem**: In sequential two-leg planning with a strict step budget, the first leg (origin → delivery) doesn't know how much budget the second leg (delivery → dock) will need. With low lambda values, the first leg aggressively optimizes for density by taking long detours, consuming 80-95 steps of the 110-step budget. This leaves only 15-30 steps for the second leg, forcing it to take high-density shortcuts to reach any dock within the remaining budget. The result is that lower lambda (which should favor density) paradoxically produces worse total density because the second leg is starved of budget.
+**The Budget Myopia Problem**: In sequential two-leg planning with a strict step budget, the first leg (origin → delivery) doesn't know how much budget the second leg (delivery → dock) will need. 
+
+**Mathematical Formulation**: The lambda-based approach uses a weighted cost function:
+```
+cost_leg1(π₁) = Σ_{v ∈ π₁} density(v) + λ × |π₁|
+cost_leg2(π₂) = Σ_{v ∈ π₂} density(v) + λ × |π₂|
+```
+where `λ` is the weight parameter balancing density and path length.
+
+The algorithm sequentially optimizes:
+```
+π₁* = argmin_{π₁: origin → delivery} cost_leg1(π₁)
+π₂* = argmin_{π₂: delivery → dock, |π₂| ≤ B - |π₁*|} cost_leg2(π₂)
+```
+
+**The Problem**: With low `λ` values, `π₁*` aggressively minimizes density by taking long detours, consuming `|π₁*| ≈ 80-95` steps. This leaves only `B - |π₁*| ≈ 15-30` steps for `π₂*`, forcing it to take high-density shortcuts. The result is:
+```
+Total density = Σ_{v ∈ π₁*} density(v) + Σ_{v ∈ π₂*} density(v)
+```
+where the second term dominates due to forced high-density paths, paradoxically producing worse total density despite lower `λ` (which should favor density).
+
+**Why CSPP Solves This**: The CSPP approach jointly optimizes:
+```
+(π₁*, π₂*) = argmin_{π₁, π₂: |π₁| + |π₂| < B} (Σ_{v ∈ π₁} density(v) + Σ_{v ∈ π₂} density(v))
+```
+This global optimization prevents the first leg from "stealing" budget from the second leg.
 
 The CSPP approach solves this by:
 - **Joint Optimization**: The merge phase considers all possible budget allocations simultaneously
