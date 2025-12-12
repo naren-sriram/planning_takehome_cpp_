@@ -2,7 +2,19 @@
 
 ## How the Planner Works
 
-The path planner uses a **Constrained Shortest Path Problem (CSPP)** approach to find optimal routes. The algorithm operates in three phases:
+The path planner uses a **Constrained Shortest Path Problem (CSPP)** approach to find optimal routes. 
+
+***
+**Note on Terminology: Constrained Shortest Path (CSPP)**
+
+In graph theory, "Shortest Path" refers to minimizing the accumulated edge weight (in this case, **Risk/Density**), not necessarily physical distance. Therefore, the algorithm minimizes **Risk** subject to a constraint on **Distance (Steps)**. This specific variant is often called the **Resource-Constrained Shortest Path Problem (RCSPP)**.
+
+* **Objective**: Minimize Cost (Density)
+* **Resource**: Steps (Flight Length)
+* **Constraint**: Resource $\le$ Budget
+***
+
+The algorithm operates in three phases:
 
 1. **Outbound Search**: Starting from the origin dock, the planner performs a search on the augmented state space `(position, steps)` to find paths to the delivery location. It explores all possible routes while tracking both the number of steps taken and the accumulated population density (risk). The output is a **Risk Profile** for steps 0 to MAX_STEPS (110), where `outbound_profile[k]` is the strict minimum density (risk) required to reach the delivery site in exactly `k` steps.
 
@@ -15,12 +27,6 @@ The algorithm uses an augmented state space where each state represents `(positi
 ![Planner Architecture](visualizer/Planner_Zipline.png)
 
 **Search Strategy**: The planner utilizes **Dijkstra's Algorithm** on the augmented state graph. The Priority Queue orders states primarily by **Accumulated Risk**, ensuring that the first time a state `(Location, Steps)` is finalized, it represents the minimum risk path to that specific state.
-
-### Cost Functions and Heuristics
-
-**Cost Function**: The cost optimized is the accumulated sum of population densities (Risk):
-
-![Planner Architecture](visualizer/Planner_Zipline.png)
 
 ### Cost Functions and Heuristics
 
