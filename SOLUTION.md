@@ -24,7 +24,7 @@ The algorithm operates in three phases:
 
 The algorithm uses an augmented state space where each state represents `(position, steps_taken, accumulated_density)`. This allows the planner to simultaneously optimize for both path length (constrained to ≤110 steps) and population density (minimized). (See Appendix A for detailed optimality guarantees.)
 
-![Planner Architecture](visualizer/Planner_Zipline.png)
+![Planner Architecture](Planner_Zipline.png)
 
 **Search Strategy**: The planner utilizes **Dijkstra's Algorithm** on the augmented state graph. The Priority Queue orders states primarily by **Accumulated Risk**, ensuring that the first time a state `(Location, Steps)` is popped, it represents the minimum risk path to that specific state.
 
@@ -81,7 +81,7 @@ To determine how many orders can be safely fulfilled per day, I analyzed the den
 
 ### Density Statistics
 
-![Density Distribution](visualizer/density_bellcurve.png)
+![Density Distribution](density_bellcurve.png)
 
 From analysis of 200 orders processed by the planner:
 
