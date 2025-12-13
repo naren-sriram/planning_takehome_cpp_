@@ -1,4 +1,4 @@
-# Solution: Safety Analysis and Daily Order Capacity
+# Solution, Safety Analysis and Daily Order Capacity
 
 ## How the Planner Works
 
