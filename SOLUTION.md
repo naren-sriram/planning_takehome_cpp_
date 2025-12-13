@@ -2,23 +2,23 @@
 
 ## How the Planner Works
 
-The path planner uses a **Constrained Shortest Path Problem (CSPP)** approach to find optimal routes. 
+This planner uses a **Constrained Shortest Path Problem (CSPP)** approach to find optimal routes. 
 
 ***
 **Note on Terminology: Constrained Shortest Path (CSPP)**
 
 In graph theory, "Shortest Path" refers to minimizing the accumulated edge weight (in this case, **Risk/Density**), not necessarily physical distance. This algorithm minimizes **Risk** subject to a constraint on **Distance (Steps)**. This specific variant is often called the **Resource-Constrained Shortest Path Problem (RCSPP)**.
 
-* **Objective**: Minimize Cost (Density $\le$ Risk)
+* **Objective**: Minimize Cost (Density / Risk)
 * **Resource**: Steps (Flight Length)
 * **Constraint**: Resource $\le$ Budget
 ***
 
 The algorithm operates in three phases:
 
-1. **Outbound Search**: Starting from the origin dock, the planner performs a search on the augmented state space `(position, steps)` to find paths to the delivery location. It explores all possible routes while tracking both the number of steps taken and the accumulated population density (risk). The output is a **Risk Profile** for steps 0 to MAX_STEPS (110), where `outbound_profile[k]` is the strict minimum density (risk) required to reach the delivery site in exactly `k` steps.
+1. **Outbound Search**: Starting from the origin dock, the planner performs a search on the augmented state space `(position, steps)` to find least risk paths to the delivery location. It explores all possible routes while tracking both the number of steps taken and the accumulated population density (risk). The output is a **Risk Profile** for steps 0 to MAX_STEPS (110), where `outbound_profile[k]` is the strict minimum density (risk) required to reach the delivery site from start position in exactly `k` steps.
 
-2. **Inbound Search**: Independently, the planner performs a similar augmented search from the delivery location to find paths to *any* available dock. The output is a risk profile `inbound_profile[k]`, representing the minimum risk to reach a dock from the delivery site in exactly `k` steps.
+2. **Inbound Search**: Independently, the planner performs a similar augmented state space search from the delivery location to find paths to *any* available dock. The output is a risk profile `inbound_profile[k]`, representing the minimum risk to reach a dock from the delivery site in exactly `k` steps.
 
 3. **Profile Merging**: The planner combines the results from both phases to find the optimal split between outbound and inbound steps. It selects the combination that minimizes total population density while ensuring the combined path length stays within the 110-step budget. This is achieved by iterating through all valid `(i, j)` pairs such that `i + j <= 110` and selecting the pair minimizing `outbound_profile[i] + inbound_profile[j]`.
 
@@ -52,7 +52,7 @@ This ensures the search explores lower-density paths first while maintaining opt
 
 ![Optimal Path Selection Example](long_path.png)
 
-**Optimality Example**: The planner demonstrates global optimization by choosing longer paths when they minimize total density. For instance, when delivering to site (13,42) with 98 steps remaining after outbound, the planner selects dock (55,23) 70 steps away (density: 3) over the nearest dock (20,40) only 7 steps away (estimated density: ~25), saving ~22 density units while remaining within the 110-step budget.
+**Optimality Example**: The planner demonstrates global optimization by choosing longer paths when they minimize total density. For instance, when delivering to site (13,42) with 98 steps remaining after outbound, the planner selects dock (55,23) 70 steps away (density: 3) over the nearest dock (20,40) only 7 steps away (optimal path: 12 steps, density: 9). Analysis of the inbound profile shows that (55,23) achieves the lowest possible density (3) among all docks, while (20,40) requires density 9—a 3× reduction by choosing the longer path, while remaining within the 110-step budget.
 
 ### Space and Time Complexity
 
@@ -180,7 +180,6 @@ These represent extremely conservative estimates assuming every order has the wo
 
 6. **No Path Degradation**: The planner continues to find optimal paths. If path quality degrades (e.g., due to map changes), densities would increase, making the estimate conservative.
 
-7. **Single Planner Instance**: The analysis assumes a single planner instance. If multiple planners operate in parallel, the daily capacity scales proportionally (e.g., 2 planners → 200 orders/day).
 
 ### Conclusion
 
@@ -282,6 +281,10 @@ This unique appraoch of first independently optimizing the two searches and then
 3. **Parallel Processing**: The outbound and inbound searches are independent and could be parallelized. Additionally, multiple orders could be processed in parallel if thread-safe data structures are used.
 
 4. **Profile Storage Overhead**: Storing complete risk profiles for all step counts (0-110) may be overkill if only a subset of step counts are feasible. Sparse storage could reduce memory usage.
+
+5. **Multi-Objective Optimization**: If path length is equally important as density, the algorithm could be extended to compute a Pareto frontier of solutions, trading off density versus path length. This would allow selecting solutions based on application-specific preferences.
+
+6. **Trajectory Smoothness**: To penalize sharp turns and improve flight smoothness, a cost term based on trajectory curvature could be added: `C_smooth = Σ |dθ/dt|`, where `θ` is the heading angle. This would favor smoother paths with gradual direction changes.
 
 **Limitations**:
 
