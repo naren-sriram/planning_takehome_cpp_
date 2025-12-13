@@ -50,6 +50,10 @@ priority(s) = (g(s), steps(s))
 ```
 This ensures the search explores lower-density paths first while maintaining optimality guarantees.
 
+![Optimal Path Selection Example](long_path.png)
+
+**Optimality Example**: The planner demonstrates global optimization by choosing longer paths when they minimize total density. For instance, when delivering to site (13,42) with 98 steps remaining after outbound, the planner selects dock (55,23) 70 steps away (density: 3) over the nearest dock (20,40) only 7 steps away (estimated density: ~25), saving ~22 density units while remaining within the 110-step budget.
+
 ### Space and Time Complexity
 
 The CSPP approach is designed to be efficient and practical for real-time planning in C++:
