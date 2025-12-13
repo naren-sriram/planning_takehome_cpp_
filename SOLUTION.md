@@ -52,7 +52,7 @@ This ensures the search explores lower-density paths first while maintaining opt
 
 ![Optimal Path Selection Example](long_path.png)
 
-**Optimality Example**: The planner demonstrates global optimization by choosing longer paths when they minimize total density. For instance, when delivering to site (13,42) with 98 steps remaining after outbound, the planner selects dock (55,23) 70 steps away (density: 3) over the nearest dock (20,40) only 7 steps away (optimal path: 12 steps, density: 9). Analysis of the inbound profile shows that (55,23) achieves the lowest possible density (3) among all docks, while (20,40) requires density 9—a 3× reduction by choosing the longer path, while remaining within the 110-step budget.
+**Optimality Example**: The planner demonstrates global optimization by choosing longer paths when they minimize total density. For instance, when delivering to site (13,42) with 98 steps remaining after outbound, the planner selects dock (55,23) 70 steps away (density: 3) over the nearest dock (20,40) only 7 chebyshev steps away (least risk path: 12 steps, density: 7). Analysis of the inbound profile shows that (55,23) achieves the lowest possible density (3) among all docks, while (20,40) requires density 7—a 2.4× reduction by choosing the longer path, while remaining within the 110-step budget.
 
 ### Space and Time Complexity
 
