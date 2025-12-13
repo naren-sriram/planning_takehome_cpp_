@@ -28,6 +28,140 @@ The algorithm uses an augmented state space where each state represents `(positi
 
 **Search Strategy**: The planner utilizes **Dijkstra's Algorithm** on the augmented state graph. The Priority Queue orders states primarily by **Accumulated Risk**, ensuring that the first time a state `(Location, Steps)` is popped, it represents the minimum risk path to that specific state.
 
+### Algorithm Description
+
+The three-phase planning algorithm is detailed below:
+
+```latex
+\begin{algorithm}
+\caption{Outbound Search: Origin Dock $\rightarrow$ Delivery Site}
+\begin{algorithmic}[1]
+\Require Map $M$, start site $s_0$, delivery site $d$, step budget $B$
+\Ensure Risk profile $R_{\text{outbound}}[0..B]$, parent map $P_{\text{outbound}}$
+\State Initialize $\text{min\_risk}[e][n][k] \gets \infty$ for all $(e,n,k)$
+\State Initialize $P_{\text{outbound}}[e][n][k] \gets \text{null}$ for all $(e,n,k)$
+\State Initialize $R_{\text{outbound}}[k] \gets \infty$ for all $k \in [0, B]$
+\State Initialize priority queue $PQ$ (ordered by risk, then steps)
+\State $\text{min\_risk}[s_0.e][s_0.n][0] \gets \text{density}(M, s_0)$
+\State $PQ.\text{push}((s_0, 0, \text{density}(M, s_0)))$
+\State $\text{goal\_steps} \gets -1$
+\While{$PQ$ is not empty}
+    \State $(pos, steps, risk) \gets PQ.\text{pop}()$
+    \If{$risk > \text{min\_risk}[pos.e][pos.n][steps]$}
+        \State \textbf{continue} \Comment{Skip if not optimal}
+    \EndIf
+    \If{$pos = d$} \Comment{Reached delivery site}
+        \If{$risk < R_{\text{outbound}}[steps]$}
+            \State $R_{\text{outbound}}[steps] \gets risk$
+            \If{$\text{goal\_steps} = -1$ or $steps < \text{goal\_steps}$}
+                \State $\text{goal\_steps} \gets steps$
+            \EndIf
+        \EndIf
+    \EndIf
+    \State $h \gets \max(|pos.e - d.e|, |pos.n - d.n|)$ \Comment{Chebyshev distance}
+    \If{$steps + h > B$}
+        \State \textbf{continue} \Comment{Prune: cannot reach goal within budget}
+    \EndIf
+    \For{each neighbor $nbr$ in 8-connected neighbors of $pos$}
+        \If{not $\text{is\_valid}(M, nbr)$}
+            \State \textbf{continue}
+        \EndIf
+        \State $new\_steps \gets steps + 1$
+        \If{$new\_steps > B$}
+            \State \textbf{continue}
+        \EndIf
+        \State $new\_risk \gets risk + \text{density}(M, nbr)$
+        \If{$new\_risk < \text{min\_risk}[nbr.e][nbr.n][new\_steps]$}
+            \State $\text{min\_risk}[nbr.e][nbr.n][new\_steps] \gets new\_risk$
+            \State $P_{\text{outbound}}[nbr.e][nbr.n][new\_steps] \gets (pos, steps)$
+            \State $PQ.\text{push}((nbr, new\_steps, new\_risk))$
+        \EndIf
+    \EndFor
+\EndWhile
+\State \textbf{return} $(R_{\text{outbound}}, P_{\text{outbound}}, \text{goal\_steps})$
+\end{algorithmic}
+\end{algorithm}
+```
+
+```latex
+\begin{algorithm}
+\caption{Inbound Search: Delivery Site $\rightarrow$ Any Dock}
+\begin{algorithmic}[1]
+\Require Map $M$, delivery site $d$, set of docks $D$, distance map $\text{dist\_to\_docks}$, step budget $B$
+\Ensure Risk profile $R_{\text{inbound}}[0..B]$, parent map $P_{\text{inbound}}$, goal states $G[0..B]$
+\State Initialize $\text{min\_risk}[e][n][k] \gets \infty$ for all $(e,n,k)$
+\State Initialize $P_{\text{inbound}}[e][n][k] \gets \text{null}$ for all $(e,n,k)$
+\State Initialize $R_{\text{inbound}}[k] \gets \infty$ for all $k \in [0, B]$
+\State Initialize $G[k] \gets d$ for all $k$ \Comment{Default goal state}
+\State Initialize priority queue $PQ$ (ordered by risk, then steps)
+\State $\text{min\_risk}[d.e][d.n][0] \gets \text{density}(M, d)$
+\State $PQ.\text{push}((d, 0, \text{density}(M, d)))$
+\While{$PQ$ is not empty}
+    \State $(pos, steps, risk) \gets PQ.\text{pop}()$
+    \If{$risk > \text{min\_risk}[pos.e][pos.n][steps]$}
+        \State \textbf{continue} \Comment{Skip if not optimal}
+    \EndIf
+    \If{$pos \in D$} \Comment{Reached a dock}
+        \If{$risk < R_{\text{inbound}}[steps]$}
+            \State $R_{\text{inbound}}[steps] \gets risk$
+            \State $G[steps] \gets pos$ \Comment{Record which dock was reached}
+        \EndIf
+    \EndIf
+    \State $h \gets \text{dist\_to\_docks}[pos.e][pos.n]$
+    \If{$steps + h > B$}
+        \State \textbf{continue} \Comment{Prune: cannot reach nearest dock within budget}
+    \EndIf
+    \For{each neighbor $nbr$ in 8-connected neighbors of $pos$}
+        \If{not $\text{is\_valid}(M, nbr)$}
+            \State \textbf{continue}
+        \EndIf
+        \State $new\_steps \gets steps + 1$
+        \If{$new\_steps > B$}
+            \State \textbf{continue}
+        \EndIf
+        \State $new\_risk \gets risk + \text{density}(M, nbr)$
+        \If{$new\_risk < \text{min\_risk}[nbr.e][nbr.n][new\_steps]$}
+            \State $\text{min\_risk}[nbr.e][nbr.n][new\_steps] \gets new\_risk$
+            \State $P_{\text{inbound}}[nbr.e][nbr.n][new\_steps] \gets (pos, steps)$
+            \State $PQ.\text{push}((nbr, new\_steps, new\_risk))$
+        \EndIf
+    \EndFor
+\EndWhile
+\State \textbf{return} $(R_{\text{inbound}}, P_{\text{inbound}}, G)$
+\end{algorithmic}
+\end{algorithm}
+```
+
+```latex
+\begin{algorithm}
+\caption{Profile Merging: Find Optimal Step Split}
+\begin{algorithmic}[1]
+\Require Risk profiles $R_{\text{outbound}}[0..B]$, $R_{\text{inbound}}[0..B]$, step budget $B$
+\Ensure Optimal split $(i^*, j^*)$, total risk, success flag
+\State Initialize $\text{best\_total\_risk} \gets \infty$
+\State Initialize $i^* \gets -1$, $j^* \gets -1$, $\text{success} \gets \text{false}$
+\For{$i \gets 0$ to $B$}
+    \If{$R_{\text{outbound}}[i] = \infty$}
+        \State \textbf{continue}
+    \EndIf
+    \For{$j \gets 0$ to $B - i$} \Comment{Ensure $i + j \leq B$}
+        \If{$R_{\text{inbound}}[j] = \infty$}
+            \State \textbf{continue}
+        \EndIf
+        \State $\text{total\_risk} \gets R_{\text{outbound}}[i] + R_{\text{inbound}}[j]$
+        \If{$\text{total\_risk} < \text{best\_total\_risk}$}
+            \State $\text{best\_total\_risk} \gets \text{total\_risk}$
+            \State $i^* \gets i$
+            \State $j^* \gets j$
+            \State $\text{success} \gets \text{true}$
+        \EndIf
+    \EndFor
+\EndFor
+\State \textbf{return} $(i^*, j^*, \text{best\_total\_risk}, \text{success})$
+\end{algorithmic}
+\end{algorithm}
+```
+
 ### Cost Functions and Heuristics
 
 **Cost Function**: The cost accumulated along a path is the sum of population densities:
@@ -55,7 +189,7 @@ The CSPP approach is designed to be efficient and practical for real-time planni
 
 **Space Complexity**: 
 - **State Storage**: For a grid of size `R × C` and maximum steps `B = 110`, the algorithm maintains:
-  - `min_risk[R][C][B+1]`: O(R × C × B) = O(R × C × 111) integers
+  - `min_risk[R][C][B+1]`: O(R × C × B) = O(R × C × 111) integers where min_risk[i][j][k] is the minimum risk accumulated to reach (i,j) in k steps from start position.
   - `parent_map[R][C][B+1]`: O(R × C × B) shared pointers
 - **Priority Queue**: In the worst case, stores O(R × C × B) states, but in practice, the heuristic pruning significantly reduces this.
 - **Total Space**: For a typical 70×59 grid (given San Francisco map), this requires approximately:
